@@ -3,38 +3,44 @@
 
 import openseespy.opensees as ops
 import numpy as np
-import FiberSection
+from timber_section import Section
 
 
-# Function to perform 2nd-order inelastic analysis of the column in OpenSeesPy
-#
-# ----------------------------------------------------------------------------
-# INPUT:
-#   t           = time of exposure
-#   b           = section width (mm)
-#   h           = section height (mm)
-#   L           = column height (mm)
-#   Ti          = ambient temperature (Celsius)
-#   Tp          = surface temperature (Celsius)
-#   a           = temperature penetration depth (mm)
-#   mSize       = mesh size (mm)
-#   P           = applied vertical load (N)
-#   numIncr     = number of load increments
-#   plot        = boolean to display section temperature profile plot
-#   disp_fiber  = boolean to display mesh on the plot
-#   side        = number of sides from which fire is applied (either 1 or 4)
-# ----------------------------------------------------------------------------
-#
-# ----------------------------------------------------------------------------
-# OUTPUT:
-#   appliedLoad = list of the total applied loads at each load step
-#   nodeDisp    = list of the horizontal middle node displacements at each 
-#                 load step
-# ----------------------------------------------------------------------------
-#
+class OpenSeesPyAnalysis():
 
-def RunAnalysis(t,b,h,L,Ti,Tp,a,mSize,e,P,numIncr,plot=False,disp_fiber=False,side=4):
-
+    '''
+    # Function to perform 2nd-order inelastic analysis of the column in OpenSeesPy
+    
+    ----------------------------------------------------------------------------
+    Args:
+      t           = time of exposure
+      b           = section width (mm)
+      h           = section height (mm)
+      L           = column height (mm)
+      Ti          = ambient temperature (Celsius)
+      Tp          = surface temperature (Celsius)
+      a           = temperature penetration depth (mm)
+      mSize       = mesh size (mm)
+      P           = applied vertical load (N)
+      numIncr     = number of load increments
+      plot        = boolean to display section temperature profile plot
+      disp_fiber  = boolean to display mesh on the plot
+      side        = number of sides from which fire is applied (either 1 or 4)
+    ----------------------------------------------------------------------------
+    
+    ----------------------------------------------------------------------------
+    Returns:
+      appliedLoad = list of the total applied loads at each load step
+      nodeDisp    = list of the horizontal middle node displacements at each 
+                    load step
+    '''
+    def __init__(self, texp, w, h, L, Ti, Tp, a, mSize, e, P, num_incr,
+                           side, plot=False, disp_fiber=True):
+        self.section = Section(width=w, height=h, Ti=Ti, Tp=Tp)
+        
+        
+    def reset(self):
+        ops.wipe()
     ## Initialize the 2D model with three DOFs at each node
     ops.wipe()
     ops.model('basic','-ndm',2,'-ndf',3)
