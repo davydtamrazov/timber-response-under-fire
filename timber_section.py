@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 from skimage.measure import label, regionprops
 
-class TimberSection():
+class Section():
     '''
     Timber section under temperature loading discretized with fibers.
     
@@ -21,27 +21,34 @@ class TimberSection():
         temp_profile: A 2D array of temperatures at each cross split (Celcius)
         temp_dict: A dictionary of indexed unique temperatures in fibers
         patch_list: A list of patches in OpenSeesPy format
+        
+    Example usage:
+        s = Section(100,100)
+        s.discretize([5,5])
+        s.set_exposure_time(5)
+        s.apply_temperature()
+        s.plot()
     '''
 
     NOMINAL_CHAR_RATE = 0.635 # (mm/min)
     
-    def __init__(self, width, height, Ti, Tp):
+    def __init__(self, width, height, Ti=20, Tp=300):
         '''Initialize timber section parameters'''
         self.w = width
         self.h = height
         self.Ti = Ti
         self.Tp = Tp
         self.texp = 0
-        self.z = None
-        self.y = None
-        self.temp_profile = None
+        self.z = np.array([[0, width], [0, width]])
+        self.y = np.array([[height, height], [0, 0]])
+        self.temp_profile = np.zeros((2,2)) + Ti
         self.temp_dict = {self.Ti : 1}
         self.patch_list = []
         
     def __str__(self):
         return (f'{self.w}mm by {self.h}mm timber section.')
         
-    def discretize_section(self, mesh_size):
+    def discretize(self, mesh_size):
         '''
         Generate mesh within section domain.
         
@@ -53,8 +60,10 @@ class TimberSection():
             np.linspace(0, self.h, int(self.h/mesh_size[1])+1)
             )
         
-        self.z = fibers[0]
-        self.y = np.flip(fibers[1],0)
+        self.y = fibers[0]
+        self.z = np.flip(fibers[1],0)
+        
+        self.temp_profile = np.zeros((self.z.shape)) + self.Ti
         
     def set_exposure_time(self, exposure_time):
         '''
@@ -71,7 +80,7 @@ class TimberSection():
         
         Args:
             temp_pdepth: A float temperature penetration depth (default=35mm)
-            side: A list of flags side exposures [left, up, right, down],
+            side: A list of flags side exposures [down, left, up, right],
                   (default=4-sided exposure)
         '''
         
@@ -82,18 +91,18 @@ class TimberSection():
             self._temp_bchar(self.z, self.Ti, self.Tp, 
                              temp_pdepth, cdepth, side[0]),
             self._temp_bchar(self.y, self.Ti, self.Tp, 
-                             temp_pdepth, cdepth, side[1]),
-            self._temp_bchar(self.w-self.z, self.Ti, self.Tp, 
-                             temp_pdepth, cdepth, side[2]),
-            self._temp_bchar(self.h-self.y, self.Ti, self.Tp, 
-                             temp_pdepth, cdepth, side[3])
+                              temp_pdepth, cdepth, side[1]),
+            self._temp_bchar(self.h-self.z, self.Ti, self.Tp, 
+                              temp_pdepth, cdepth, side[2]),
+            self._temp_bchar(self.w-self.y, self.Ti, self.Tp, 
+                              temp_pdepth, cdepth, side[3])
             ]).max(axis=2)
         
         # Update patch definition
         self._split_fibers()
 
 
-    def plot_section(self, lw=1, factor=10, disp_fiber=True, levels=10):
+    def plot(self, lw=1, factor=10, disp_fiber=True, levels=10):
         '''
         Generate contour plot of the temperature profile across the section.
         
@@ -103,22 +112,22 @@ class TimberSection():
             disp_fiber: A flag to display fibers on the plot (default=True)
             levels: An integer of contour plot levels (default=10)
         '''
-        fig, ax = plt.subplots(figsize=(self.w/factor, self.h/factor))
+        fig, ax = plt.subplots(figsize=(self.w/factor, self.h/factor), dpi=200)
         ax.set_axis_off()
         ax.set(xlim=[0, self.w], ylim=[0, self.h])
         
         # Display grid of fibers
         if disp_fiber:
-            ax.plot(self.z, self.y, c='k', ls='-', lw = lw)
-            ax.plot(self.z.T, self.y.T, c='k', ls='-', lw = lw)
+            ax.plot(self.y, self.z, c='k', ls='-', lw = lw)
+            ax.plot(self.y.T, self.z.T, c='k', ls='-', lw = lw)
 
         # Display temperature profile
-        ax.contourf(self.z, self.y, self.temp_profile, cmap='YlOrRd', 
-                     vmin = self.Ti, vmax = self.Tp, levels=levels, zorder=2)
+        ax.contourf(self.y, self.z, self.temp_profile, cmap='YlOrRd', 
+                      vmin = self.Ti, vmax = self.Tp, levels=levels, zorder=2)
         
         # Display charred area
         ax.add_patch(Rectangle((0,0), self.w, self.h, fill=True, 
-                               fc = 'black', alpha = 0.75, hatch='/')) 
+                                fc = 'black', alpha = 0.75, hatch='/')) 
         
     
     def _temp_bchar(self, d, Ti, Tp, temp_pdepth, cdepth, exposed=True):
@@ -150,20 +159,36 @@ class TimberSection():
         fiber_temp += np.roll(fiber_temp, shift=1, axis=0)
         fiber_temp += np.roll(fiber_temp, shift=1, axis=1)
         fiber_temp /= 4
-        fiber_temp = np.where(np.isnan(fiber_temp), self.Tp, fiber_temp)[1:,1:]
+        fiber_temp = fiber_temp[1:,1:]
+        fiber_temp = fiber_temp[~np.isnan(fiber_temp).all(axis=1), :]
+        fiber_temp = fiber_temp[:, ~np.isnan(fiber_temp).all(axis=0)]
+        fiber_temp = np.where(np.isnan(fiber_temp), self.Tp, fiber_temp)
+        
+        if fiber_temp.shape[0]==0 or fiber_temp.shape[1]==0: 
+            raise Exception('No remaining section area at the specified exposure time.')
+    
         self.temp_dict = {k:(v+1) for v, k in 
                               enumerate(np.unique(fiber_temp))}
         
         # Split section into fiber patches defined in OpenSeesPy format
         self.patch_list = []
-        for t in self.material_dict.keys():
+        for t in self.temp_dict.keys():
             temp_mask = (fiber_temp==t).astype(int)
             patches = label(temp_mask, connectivity=1)
             for s in regionprops(patches):
-                z_max = self.z[:,1:][s.slice].max()
-                z_min = self.z[:,:-1][s.slice].min()
-                y_max = self.y[:-1,:][s.slice].max()
-                y_min = self.y[1:,:][s.slice].min()
-                c1, c2 = (z_min, y_min), (z_max, y_max)
+                z_max = self.z[:-1,:][s.slice].max()
+                z_min = self.z[1:,:][s.slice].min()
+                y_max = self.y[:,1:][s.slice].max()
+                y_min = self.y[:,:-1][s.slice].min()
+                c1, c2 = (y_min, z_min), (y_max, z_max)
                 nz, ny = self.z[s.slice].shape
-                self.patch_list.append([self.temp_dict[t], nz, ny, c1, c2])
+                self.patch_list.append([self.temp_dict[t], ny, nz, c1, c2])
+                
+                
+# t = Section(100,200)
+# t.discretize([25,10])
+# t.set_exposure_time(20)
+# t.apply_temperature(side=[1,1,1,1])
+# t.plot()
+
+# print(np.array(t.patch_list))
