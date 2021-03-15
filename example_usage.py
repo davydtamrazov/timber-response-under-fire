@@ -44,6 +44,54 @@ e = L/1000
 P = 15000e3
 numIncr = 1000
 
+
+    
+        
+# m = StructuralModel(texp=1, w=100, h=200, mesh_size=[5,5])
+# m.define_material()
+# m.define_section()
+
+# nodes = [[1, 0, 0],
+#           [2, 0, 5000],
+#           [3, 5000, 5000],
+#           [4, 10000, 5000],
+#           [5, 10000, 0]]
+
+# elements = [[0, 1, 2],
+#             [1, 2, 3],
+#             [2, 3, 4],
+#             [3, 4, 5]]
+
+# fixities = [[1, 1, 1, 0],
+#             [5, 0, 1, 0]]
+
+# # nodes = [[1, 0, 0],
+# #          [2, 10, 5000],
+# #          [3, 0, 10000]]
+
+# # elements = [[0, 1, 2],
+# #             [1, 2, 3],
+# #             [2, 3, 4]]
+
+# # fixities = [[1, 1, 1, 1]]
+
+# m.define_geometry(nodes, elements, fixities)
+
+# loads = [[3, 0, -200, 0]]
+# m.define_loads(loads)
+
+# recorders = [['disp_node3.txt', 3, 2, 'disp']]
+# m.define_recorders(recorders)
+
+# # m.material.plot(5)
+# m.section.plot()
+# # m.plot_structure()
+
+# m.analyse(1000)
+# m.plot_deformed_shape()
+# m.wipe_model()
+
+
 #%% Example 1: Plot fiber section at time t
 plot = True
 disp_fiber = True

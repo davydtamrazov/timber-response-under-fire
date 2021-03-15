@@ -39,8 +39,8 @@ class Section():
         self.Ti = Ti
         self.Tp = Tp
         self.texp = 0
-        self.z = np.array([[0, width], [0, width]])
-        self.y = np.array([[height, height], [0, 0]])
+        self.z = np.array([[0, height], [0, height]])
+        self.y = np.array([[width, width], [0, 0]])
         self.temp_profile = np.zeros((2,2)) + Ti
         self.temp_dict = {self.Ti : 1}
         self.patch_list = []
@@ -60,8 +60,8 @@ class Section():
             np.linspace(0, self.h, int(self.h/mesh_size[1])+1)
             )
         
-        self.y = fibers[0]
-        self.z = np.flip(fibers[1],0)
+        self.z = fibers[0]
+        self.y = np.flip(fibers[1],0)
         
         self.temp_profile = np.zeros((self.z.shape)) + self.Ti
         
@@ -80,7 +80,7 @@ class Section():
         
         Args:
             temp_pdepth: A float temperature penetration depth (default=35mm)
-            side: A list of flags side exposures [down, left, up, right],
+            side: A list of flags side exposures [left, down, right, up],
                   (default=4-sided exposure)
         '''
         
@@ -92,9 +92,9 @@ class Section():
                              temp_pdepth, cdepth, side[0]),
             self._temp_bchar(self.y, self.Ti, self.Tp, 
                               temp_pdepth, cdepth, side[1]),
-            self._temp_bchar(self.h-self.z, self.Ti, self.Tp, 
+            self._temp_bchar(self.w-self.z, self.Ti, self.Tp, 
                               temp_pdepth, cdepth, side[2]),
-            self._temp_bchar(self.w-self.y, self.Ti, self.Tp, 
+            self._temp_bchar(self.h-self.y, self.Ti, self.Tp, 
                               temp_pdepth, cdepth, side[3])
             ]).max(axis=2)
         
@@ -118,11 +118,11 @@ class Section():
         
         # Display grid of fibers
         if disp_fiber:
-            ax.plot(self.y, self.z, c='k', ls='-', lw = lw)
-            ax.plot(self.y.T, self.z.T, c='k', ls='-', lw = lw)
+            ax.plot(self.z, self.y, c='k', ls='-', lw = lw)
+            ax.plot(self.z.T, self.y.T, c='k', ls='-', lw = lw)
 
         # Display temperature profile
-        ax.contourf(self.y, self.z, self.temp_profile, cmap='YlOrRd', 
+        ax.contourf(self.z, self.y, self.temp_profile, cmap='YlOrRd', 
                       vmin = self.Ti, vmax = self.Tp, levels=levels, zorder=2)
         
         # Display charred area
@@ -176,19 +176,19 @@ class Section():
             temp_mask = (fiber_temp==t).astype(int)
             patches = label(temp_mask, connectivity=1)
             for s in regionprops(patches):
-                z_max = self.z[:-1,:][s.slice].max()
-                z_min = self.z[1:,:][s.slice].min()
-                y_max = self.y[:,1:][s.slice].max()
-                y_min = self.y[:,:-1][s.slice].min()
+                z_max = self.z[:,1:][s.slice].max()
+                z_min = self.z[:,:-1][s.slice].min()
+                y_max = self.y[:-1,:][s.slice].max()
+                y_min = self.y[1:,:][s.slice].min()
                 c1, c2 = (y_min, z_min), (y_max, z_max)
                 nz, ny = self.z[s.slice].shape
                 self.patch_list.append([self.temp_dict[t], ny, nz, c1, c2])
                 
                 
-# t = Section(100,200)
+# t = Section(200,100)
 # t.discretize([25,10])
 # t.set_exposure_time(20)
-# t.apply_temperature(side=[1,1,1,1])
+# t.apply_temperature(side=[1,0,0,1])
 # t.plot()
 
 # print(np.array(t.patch_list))
