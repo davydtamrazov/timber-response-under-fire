@@ -33,67 +33,53 @@ fixities = [[1, 1, 1, 0],
 
 loads = [[3, 0, Py, 0]]
 
-#%%
-t_ig = 2 # 2 minutes to ignition
-t = np.arange(0, t_ig+0.25, 0.25)
-T_range = np.linspace(25,300, num=t.shape[0])
 
-displacement = []
-
-for i, T in enumerate(T_range):
-    print(T)
-    m = StructuralModel(0, w, h, T, mesh_size, nodes, elements, fixities, loads)
-    m.define_material()
-    m.define_fiber_section()
-    m.define_geometry(num_integ=5)
-    m.define_loads()
-    
-    # # recorders = [['disp_node3.txt', 3, 2, 'disp']]
-    # m.define_recorders(recorders)
-    
-    # m.material.plot(5)
-    ok, disp = m.analyse(num_incr, 3)
-    displacement.append(disp[1])
-
-    m.section.plot(factor=50, levels=40, save=f'section/exposure{round(t[i]*100)}')
-    # m.plot_structure()
-    m.plot_deformed_shape(xlim=[-1000,12000], ylim=[-500,5000], scale=4, 
-                          arrow_len=1, arrow_width=1.5, save=f'deformation/exposure{round(t[i]*100)}')
-    
+def plot_displacement(time, disp, save, xlim, ylim, marker='o', c='k', size=10):
     fig, ax = plt.subplots(dpi=75)
     ax.grid(True, which='both', alpha=0.5)
     ax.set(xlabel='Exposure time (min)', ylabel='Vertical displacement (mm)',
-           xlim=[0,20], ylim=[-70, -15])
-    ax.plot(t[:i+1], displacement, c='k')
-    ax.scatter(t[i], displacement[-1], marker='o', s=10, c='k')
-    fig.savefig(f'displacement/exposure{round(t[i]*100)}', transparent=True)
-    # m.wipe_model()
-   
-#%%
-texp = np.arange(0,100, 0.25)
-T = 300
+            xlim=xlim, ylim=ylim)
+    ax.plot(time, disp, c='k', zorder=0)
+    ax.scatter(time[-1], displacement[-1], marker=marker, s=size, c=c, zorder=1)
+    fig.savefig(save, transparent=True)
+    
 
-for t in texp:
-    m = StructuralModel(t, w, h, T, mesh_size, nodes, elements, fixities, loads)
+displacement = []
+
+t_ig = 2 # 2 minutes to ignition
+texp = np.arange(0, 100, 0.25)
+
+T_range = np.linspace(25,300, num=texp[np.where(texp<=t_ig)].shape[0])
+
+for i, t in enumerate(texp):
+    print(t)
+    if t <= t_ig:
+        m = StructuralModel(0, w, h, T_range[i], mesh_size, nodes, elements, fixities, loads)
+    else:
+        m = StructuralModel(t, w, h, T_range[-1], mesh_size, nodes, elements, fixities, loads)
+        
     m.define_material()
     m.define_fiber_section()
     m.define_geometry(num_integ=5)
     m.define_loads()
+ 
+    ok, disp = m.analyse(num_incr, 3)
     
-    # # recorders = [['disp_node3.txt', 3, 2, 'disp']]
-    # m.define_recorders(recorders)
-    
-    # m.material.plot(5)
-    ok, load_factor = m.analyse(num_incr)
     
     if ok == 0:
-        m.section.plot(factor=50, levels=50, save=f'section/exposure{round((t_ig+t)*100)}')
-        # m.plot_structure()
+        displacement.append(disp[1])
+        m.section.plot(factor=50, levels=40, save=f'section/exposure{round(t*100)}')
         m.plot_deformed_shape(xlim=[-1000,12000], ylim=[-500,5000], scale=4, 
-                              arrow_len=1, arrow_width=1.5, save=f'deformation/exposure{round((t_ig+t)*100)}')
-        # m.wipe_model()
+                              arrow_len=1, arrow_width=1.5, save=f'deformation/exposure{round(t*100)}')
+        plot_displacement(texp[:i+1], displacement, save=f'displacement/exposure{round(t*100)}',
+                          xlim=[0,20], ylim=[-75,-15], marker='o', c='k')
+        m.wipe_model()
     else:
-        print(f'Structure failed in {t_ig + t} minutes')
+        displacement.append(-70)
+        m.section.plot(factor=50, levels=40, save=f'section/exposure{round(t*100)}')
+        plot_displacement(texp[:i+1], displacement, save=f'displacement/exposure{round(t*100)}',
+                          xlim=[0,20], ylim=[-75,-15], marker='x', c='orangered', size=20)
+        print(f'Structure failed in {t} minutes')
         break
     
 #%%
