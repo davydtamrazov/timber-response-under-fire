@@ -8,23 +8,23 @@ from skimage.measure import label, regionprops
 
 class Section():
     '''
-    Timber section under temperature loading discretized with fibers.
+    Profile of the timber section under fire, discretized with fibers.
     
     Attributes:
-        w: An integer section width (mm).
-        h: An integet section height (mm).
-        Ti: An integer ambient temperature (Celsius)
-        Tp: An integer surface temperature (Celsius)
-        texp: A float fire exposure time (min)
-        z: A 2D array of fiber split locations along the vertical axis (mm)
-        y: A 2D array of fiber split locations along the horizontal axis (mm)
-        temp_profile: A 2D array of temperatures at each cross split (Celcius)
-        temp_dict: A dictionary of indexed unique temperatures in fibers
-        patch_list: A list of patches in OpenSeesPy format
+        w: An integer section width, mm.
+        h: An integet section height, mm.
+        Ti: An integer ambient temperature, Celsius.
+        Tp: An integer surface temperature, Celsius.
+        texp: A float fire exposure time, min.
+        z: A 2D array of fiber split locations along the vertical axis, mm.
+        y: A 2D array of fiber split locations along the horizontal axis, mm.
+        temp_profile: A 2D array of temperatures at each cross split, Celcius.
+        temp_dict: A dictionary of indexed unique temperatures in fibers.
+        patch_list: A list of patches in OpenSeesPy format.
         
     Example usage:
         s = Section(100,100)
-        s.discretize([5,5])
+        s.discretise([5,5])
         s.set_exposure_time(5)
         s.apply_temperature()
         s.plot()
@@ -32,28 +32,37 @@ class Section():
 
     NOMINAL_CHAR_RATE = 0.635 # (mm/min)
     
-    def __init__(self, width, height, Ti=20, Tp=300):
-        '''Initialize timber section parameters'''
+    def __init__(self, width, height, Ti, Tp):
+        '''
+        Initialise timber section parameters.
+        
+        Args:
+            width: An integer section width (z axis).
+            height: An integer section height (y axis).
+            Ti: An integer ambient temperature, Celsius.
+            Tp: An integer surface burning temperature, Celsius.
+        '''
         self.w = width
         self.h = height
         self.Ti = Ti
         self.Tp = Tp
         self.texp = 0
-        self.z = np.array([[0, height], [0, height]])
-        self.y = np.array([[width, width], [0, 0]])
+        self.y = np.array([[0, height], [0, height]])
+        self.z = np.array([[width, width], [0, 0]])
         self.temp_profile = np.zeros((2,2)) + Ti
         self.temp_dict = {self.Ti : 1}
         self.patch_list = []
         
     def __str__(self):
+        '''Print class description.'''
         return (f'{self.w}mm by {self.h}mm timber section.')
         
-    def discretize(self, mesh_size):
+    def discretise(self, mesh_size):
         '''
         Generate mesh within section domain.
         
         Args:
-            mesh_size: A tuple mesh size in along z and y axes
+            mesh_size: A tuple mesh size in along z and y axes.
         '''
         fibers = np.meshgrid(
             np.linspace(0, self.w, int(self.w/mesh_size[0])+1),
@@ -70,7 +79,7 @@ class Section():
         Update exposure time.
         
         Args:
-            exposure_time: A float exposure time (min).
+            exposure_time: A float exposure time, min.
         '''
         self.texp = exposure_time
         
@@ -79,6 +88,7 @@ class Section():
         Calculate temperature profile in discretised section.
         
         Args:
+            T: A float temperature at the surface, Celsius.
             temp_pdepth: A float temperature penetration depth (default=35mm)
             side: A list of flags side exposures [left, down, right, up],
                   (default=4-sided exposure)
@@ -131,27 +141,28 @@ class Section():
         fig.tight_layout()
         
         if save: 
-            fig.savefig(save, transparent=True, bbox_inches='tight', pad_inches = 0)
+            fig.savefig(save, transparent=True, 
+                        bbox_inches='tight', pad_inches = 0)
         
         plt.show()
         
     
-    def _temp_bchar(self, d, Ti, T, temp_pdepth, cdepth, exposed=True):
+    def _temp_bchar(self, d, Ti, T, heat_pdepth, cdepth, exposed=True):
         '''
         Calculate temperature at an effective depth below the char layer
         using Eurocode 5 temperature profile equation.
         
         Args:
-            d: A float depth from the section edge (mm)
-            Ti: An integer ambient temperature (Celsius)
-            T: An integer surface temperature (Celsius)
-            temp_pdepth: A float temperature penetration depth (default=35mm)
-            cdepth: Charred depth from section edge (mm)
+            d: A float depth from the section edge, mm.
+            Ti: An integer ambient temperature, Celsius.
+            T: An integer surface temperature, Celsius.
+            temp_pdepth: A float heat penetration depth, mm (default=35mm)
+            cdepth: Charred depth from section edge, mm.
         '''
         
-        d_eff = (d - exposed*cdepth).clip(max=temp_pdepth)
+        d_eff = (d - exposed*cdepth).clip(max=heat_pdepth)
         d_eff = np.where(d_eff < 0, np.nan, d_eff)
-        Tx = Ti + exposed * (T - Ti) * (1-d_eff/temp_pdepth)**2
+        Tx = Ti + exposed * (T - Ti) * (1-d_eff/heat_pdepth)**2
         return Tx
     
 

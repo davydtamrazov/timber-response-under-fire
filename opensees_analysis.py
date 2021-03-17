@@ -2,89 +2,163 @@
 # -*- coding: utf-8 -*-
 
 import openseespy.opensees as ops
-from openseespy import test
 import openseespy.postprocessing.ops_vis as opsv
-import openseespy.postprocessing.Get_Rendering as opsplt
 from openseespy.preprocessing import DiscretizeMember
 import matplotlib.pyplot as plt
 import numpy as np
+
 from timber_section import Section
-from scipy.interpolate import make_interp_spline
+from timber_material import Material
 
-
-class StructuralModel():
-
+class OpenSeesPyModel():
     '''
-    # Function to perform 2nd-order inelastic analysis of the column in OpenSeesPy
+    Definition of the structural model in OpenSeesPy, analysed with 2nd-order 
+    inelastic analysis.
     
-    ----------------------------------------------------------------------------
-    Args:
-      t           = time of exposure
-      b           = section width (mm)
-      h           = section height (mm)
-      L           = column height (mm)
-      Ti          = ambient temperature (Celsius)
-      Tp          = surface temperature (Celsius)
-      a           = temperature penetration depth (mm)
-      mSize       = mesh size (mm)
-      P           = applied vertical load (N)
-      numIncr     = number of load increments
-      plot        = boolean to display section temperature profile plot
-      disp_fiber  = boolean to display mesh on the plot
-      side        = number of sides from which fire is applied (either 1 or 4)
-    ----------------------------------------------------------------------------
-    
-    ----------------------------------------------------------------------------
-    Returns:
-      appliedLoad = list of the total applied loads at each load step
-      nodeDisp    = list of the horizontal middle node displacements at each 
-                    load step
-    '''
-    def __init__(self, texp, w, h, T, mesh_size, nodes, elements, fixs, loads, ndm=2, ndf=3):
-                           
-        self.section = Section(width=w, height=h)
-        self.material = Material()
-        self.nodes = nodes
-        self.elements = elements
-        self.fixs = fixs
-        self.loads = loads
+    Attributes:
+        section: Timber section object defined by width and height.
+        material: Material object, defined by multiple material properties.
+        nodes: List of node definitions [node_tag, coord_x, coord_y]
+        elements: List of element definitions [mat_tag, node1, node2, n_disc]
+        fixities: List of node fixities [node, tran_x, tran_y, rot_z]
+        loads: List of point load definitions [node, Px, Py, Mz]
         
-        self.section.discretize(mesh_size)
-        self.section.set_exposure_time(texp)
-        self.section.apply_temperature(T=T)
+    Example usage:
+        # Frame with point load at the midpoint of the beam
+        nodes = [
+            [1, 0, 0],
+            [2, 0, 5000],
+            [3, 5000, 5000],
+            [4, 10000, 5000],
+            [5, 10000, 0]]
+        elements = [
+            [0, 1, 2, 1],
+            [1, 2, 3, 1],
+            [2, 3, 4, 1],
+            [3, 4, 5, 1]]
+        fixities = [
+            [1, 1, 1, 0],
+            [5, 0, 1, 0]]
+        loads = [
+            [3, 0, -1000, 0]]
+        node_recorders = [
+            ['node2.txt', 2, 2, 'disp']]
+        
+        m = OpenSeesPyModel()
+        m.define_section(200, 200, [5,5])
+        m.define_fire_exposure(0, 300)
+        m.section.plot(save='section.png')
+        m.define_material()
+        m.define_fibers()
+        m.define_geometry(nodes, elements, fixities, num_integ=5)
+        m.define_loads(loads)
+        m.define_node_recorders(node_recorders)
+        m.analyse(num_incr=1000)
+        m.plot_deformed_shape(xlim=[-1000,12000], ylim=[-500,5000], scale=4, 
+                              arrow_len=1, arrow_width=1.5, save='defl.png')
+    '''
+
+    def __init__(self, ndm=2, ndf=3):
+        '''
+        Initialise OpenSeesPy model.
+        
+        Args:
+            ndm: An integer number of dimensions (default=2D).
+            ndf: An integer number of degrees of freedom (default=3 DOF).
+        '''
         
         ops.wipe()
-        ops.model('basic', '-ndm', ndm, '-ndf', ndf)
+        ops.model('basic', '-ndm', ndm, '-ndf', ndf)   
+         
+        self.material = None
+        self.section = None
+        self.nodes = None
+        self.elements = None
+        self.fixities = None
+        self.loads = None
         
-    def define_material(self):
+    def define_section(self, w, h, mesh_size, Ti=20, Tp=300):
         '''
-        Define unique materials from temperature tags.
+        Define empty section.
+        
+        Args:
+            w: An integer section width (z axis).
+            h: An integer section height (y axis).
+            mesh_size: A tuple mesh size in along z and y axes.
+            Ti: An integer ambient temperature, Celsius (default=20C).
+            Tp: An integer surface burning temperature, Celsius (default=300C).
         '''
         
-        # ops.uniaxialMaterial('Concrete01', 1, 50, 1e-3, 40, 1e-2)
-
-        for T, mattag in self.section.temp_dict.items():
-            stress, strain = self.material.get_stress_strain(T)
-            ops.uniaxialMaterial('ElasticMultiLinear', mattag, 0.0, '-strain', *strain, '-stress', *stress)
-
-    def define_fiber_section(self):
-        '''
-        Define fiber section.
-        '''
+        self.section = Section(w, h, Ti, Tp)
+        self.section.discretise(mesh_size)
         ops.section('Fiber', 1)
+        
+    def define_fire_exposure(self, texp, T):
+        '''
+        Define fire exposure parameters and update the section
+        
+        Args:
+            texp: A float time of exposure, min.
+            T: An integer temperature at the surface, Celsius.
+        '''
+        
+        self.section.set_exposure_time(texp)
+        self.section.apply_temperature(T)
+        
+    def define_material(self, f_cu=45, f_tu=80, eps_y=4e-3, 
+                        eps_r=13e-3, eps_tu=7.1e-3):
+        '''
+        Define a material object and assign appropriate properties to each 
+        fiber in the section.
+        
+        Args:
+            f_cu: A float ultimate compressive strength, MPa (default=45MPa).
+            f_tu: A float ultimate tensile strength, MPa (default=80MPa).
+            eps_y: A float yield compression strain (default=4e-3).
+            eps_r: A float compressive strain at rupture (default=13e-3).
+            eps_tu: A float tensile strain at rupture (default=7.1d-3).
+        '''
+
+        if self.section == None:
+            raise Exception('No section is defined.')
+            
+        self.material = Material(f_cu, f_tu, eps_y, eps_r, eps_tu)
+            
+        for T, mattag in self.section.temp_dict.items():
+            stress, strain = self.material.get_stress_strain(T, 
+                                                             self.section.Ti)
+            ops.uniaxialMaterial('ElasticMultiLinear', mattag, 0.0, 
+                                 '-strain', *strain, '-stress', *stress)
+            
+    def define_fibers(self):
+        '''
+        Define fibers in the section.
+        '''
+        if self.material == None:
+            raise Exception('No material is defined.')
+        
         for p in self.section.patch_list:
             mattag, ny, nz, coord1, coord2 = p
             ops.patch('rect', mattag, ny, nz, *coord1, *coord2)
         
-    def define_geometry(self, num_integ=10):
+    def define_geometry(self, nodes, elements, fixities, num_integ=10):
         '''
-        Define geometry of the structure.
+        Define geometry of the structure (all dimensions are in mm).
         
         Args:
-            nodes: A list of nodes in a form [node_tag, coord1, coord2]
-            elements: A list of elements in a form [ele_tag, node1, node2, disc]
-            fixities: A list of fixities in a form [node, x, y, z]
+            nodes: A list of nodes in a form [node_tag, coord1, coord2].
+            elements: A list of elements in a form 
+                [ele_tag, node1, node2, disc].
+            fixities: A list of fixities in a form [node, x, y, z].
+            num_integ: Number of integration points along each element 
+                (default=10)
         '''
+        self.nodes = nodes
+        self.elements = elements
+        self.fixities = fixities
+        
+        if self.section == None:
+            raise Exception('No section is defined.')
         
         ops.geomTransf('PDelta', 1)
         ops.beamIntegration('Lobatto', 1, 1, num_integ)
@@ -98,35 +172,56 @@ class StructuralModel():
                                               nodeTag=len(ops.getNodeTags())+1,
                                               eleTag=len(ops.getEleTags())+1)
         
-        for fx in self.fixs: ops.fix(*fx)
-
+        for fx in self.fixities: ops.fix(*fx)
         
-    def define_loads(self):
+    def define_loads(self, loads):
         '''
-        Apply loads
+        Apply loads (all loads are in N)
         
         Args:
-            loads: A list of point loads (N) in a form [node, Px, Py, Pz]
+            loads: A list of point loads in a form [node, Px, Py, Pz].
         '''
+        
+        if self.nodes == None:
+            raise Exception('No geometry is defined.')
+            
+        self.loads = loads
         
         ops.timeSeries('Linear', 1)
         ops.pattern('Plain', 1, 1)
         
         for ld in self.loads: ops.load(*ld)
         
+    def define_node_recorders(self, node_recorders):
+        '''
+        Define node recorders that will track the specified results type for 
+        each node.
         
-    def define_recorders(self, node_recorders):
+        Args:
+            node_recorder: A list of nodes to be tracked in the form 
+                [recorder_name (str), node (int), dof(int), restype (str)].
+                
+                restype type can be seleceted from the following:
+                    'disp' displacement,
+                    'vel' velocity,
+                    'accel' acceleration,
+                    'incrDisp' incremental displacement,
+                    'reaction' nodal reaction.
+        '''
+        
         for nr in node_recorders: 
             name, node, dof, restype = nr
             ops.recorder('Node','-file', name,'-closeOnWrite','-node', node, 
                          '-dof', dof, restype)
             
-    def analyse(self, num_incr, return_node_disp=None):
+    def analyse(self, num_incr):
         '''
         Analyse the system.
-        '''
         
-        # Load step increment (N)
+        Args:
+            num_incr: An integer number of load increments.
+            return_node_disp: 
+        '''
 
         ops.constraints('Transformation')
         ops.numberer('RCM')
@@ -142,23 +237,40 @@ class StructuralModel():
         # Report analysis status
         if ok == 0: print("Analysis done.")
         else:       print("Convergence issue.")
-        
-        # print(ops.nodeDisp(3))
-        if return_node_disp==None:
-            return ok
-        else:
-            return ok, ops.nodeDisp(return_node_disp)
                 
     def wipe_model(self):
+        '''
+        Clear the model after the analysis, required to output recorders.
+        '''
+        
         ops.wipe()
 
     def plot_structure(self):
+        '''
+        Plot nodes and elements of the model.
+        '''
+        
         fig, ax = plt.subplots(dpi=50)
         ax.set_axis_off()
         opsv.plot_model('nodes','elements')
         plt.show()
         
-    def plot_deformed_shape(self, xlim, ylim, scale=1, arrow_len=10, arrow_width=2, save=0):
+    def plot_deformed_shape(self, xlim, ylim, scale=1, arrow_len=10, 
+                            arrow_width=2, save=''):
+        '''
+        Plot deformed shape of the model.
+        
+        Args:
+            xlim: A list of left and right limits of the x axis.
+            ylim: A list of bottom and top limits of the y axis.
+            scale: A float scale of the displayed deformations (default=1).
+            arrow_len: An integer length of the load arrows displayed 
+                (default=10).
+            arrow_width: An integer head width of the load arrows displayed 
+                (default=2).
+            save: A string indicating save path for the figure (default='',
+                meaning that the figure will NOT be saved by default).
+        '''
         
         fig, ax = plt.subplots(dpi=75)
         ax.set_axis_off()
@@ -168,7 +280,6 @@ class StructuralModel():
         opsv.plot_defo(scale, fmt_undefo='k-', fmt_interp='k--')      
         
         ax.axis('equal')
-        # ax.set_aspect('auto')
         ax.set(xlim=xlim, ylim=ylim)
 
         node_list = ops.getNodeTags()
@@ -187,69 +298,6 @@ class StructuralModel():
                                           lw=arrow_width,
                                           fc='orangered',
                                           ec='orangered'))
-        
         if save: 
-            fig.savefig(save, transparent=True)
-            
+            fig.savefig(save, transparent=True) 
         plt.show()
-        
- 
-class Material():
-    def __init__(self, f_cu=45, f_tu=80, eps_y=4e-3, eps_r=13e-3, eps_tu=7.1e-3):
-        self.f_cu = f_cu # Ultimate strength
-        self.f_tu = -f_tu # Tensile strength
-        self.f_r = self.f_cu*0.75 # Rupture strength
-        
-        self.E_wc = self.f_cu/eps_y # Modulus of elasticity
-        self.E_wt = self.E_wc
-        self.E_tc = self.f_tu/eps_tu # Modulus of elasticity
-        self.E_q = (self.f_r - self.f_cu)/(eps_r-eps_y) # Softening modulus of elasticity
-
-    def get_stress_strain(self, T, Ti=20):
-        '''
-        Update strengths and moduli of elasticity with temperature reduction
-        factors as per Eurocode 5 (EN 1995-1-2) and calculate stress-strain
-        points.
-        '''
-        
-        #array of strain points along stress-strain curve
-        
-        # Strength temperature reduction factors (Eurocode 5)
-        R_fc = min(1,1-(T-Ti)*0.35/(100-Ti)) if T<100 else max(1e-4,0.65-(T-100)*0.65/200)
-        R_ft = min(1,1-(T-Ti)*0.60/(100-Ti)) if T<100 else max(1e-4,0.40-(T-100)*0.40/200)
-            
-        # Modulus of elasticity temperature reduction factors (Eurocode 5)
-        R_Ec = min(1,1-(T-Ti)*0.65/(100-Ti)) if T<100 else max(1e-4,0.35-(T-100)*0.35/200)
-        R_Et = min(1,1-(T-Ti)*0.50/(100-Ti)) if T<100 else max(1e-4,0.50-(T-100)*0.50/200)
-        
-        # Update modulus of elasticity values
-        rE_wc = self.E_wc * R_Ec
-        rE_wt = self.E_wt * R_Et
-        rE_q = self.E_q * R_Ec
-        
-        # Update strength values
-        rf_cu = self.f_cu * R_fc
-        rf_r = self.f_r * R_fc
-        rf_tu = self.f_tu * R_ft
-        
-        stress = np.array([rf_tu, rf_tu, 0, rf_cu, rf_r])
-        
-        # Strain points (t = tension, c = compression)
-        e0 = 0
-        e1t = rf_tu/rE_wt
-        e2t = e1t - 1e-2
-        e1c = rf_cu/rE_wc
-        e2c = e1c + (rf_r-rf_cu)/rE_q
-        strain = np.array([e2t, e1t, e0, e1c, e2c])
-        
-        return stress, strain
-    
-    def plot(self, T):
-        stress, strain = self.get_stress_strain(T)
-        
-        fig, ax = plt.subplots(figsize=(7,4), dpi=200)
-        ax.grid(True, which='both', alpha=0.5)
-        ax.axhline(y=0, color='k', lw=1)
-        ax.axvline(x=0, color='k', lw=1)
-        ax.set(xlabel='Strain ($\epsilon$), $10^{-4}$', ylabel='Stress ($\sigma$), MPa')
-        ax.plot(strain*1e4, stress, lw=1, c='k', ls='--')
