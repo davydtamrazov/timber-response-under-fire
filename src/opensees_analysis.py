@@ -123,7 +123,6 @@ class OpenSeesPyModel():
             raise Exception('No section is defined.')
             
         self.material = Material(f_cu, f_tu, eps_y, eps_r, eps_tu)
-            
         for T, mattag in self.section.temp_dict.items():
             stress, strain = self.material.get_stress_strain(T, 
                                                              self.section.Ti)

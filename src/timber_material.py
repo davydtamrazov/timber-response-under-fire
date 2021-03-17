@@ -37,7 +37,6 @@ class Material():
         self.f_cu = f_cu
         self.f_tu = -f_tu
         self.f_r = self.f_cu*0.75
-        
         self.E_wc = self.f_cu/eps_y
         self.E_wt = -self.f_tu/eps_tu
         self.E_q = (self.f_r - self.f_cu)/(eps_r-eps_y)

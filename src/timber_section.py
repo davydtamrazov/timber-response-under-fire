@@ -66,8 +66,7 @@ class Section():
         '''
         fibers = np.meshgrid(
             np.linspace(0, self.w, int(self.w/mesh_size[0])+1),
-            np.linspace(0, self.h, int(self.h/mesh_size[1])+1)
-            )
+            np.linspace(0, self.h, int(self.h/mesh_size[1])+1))
         
         self.z = fibers[0]
         self.y = np.flip(fibers[1],0)
