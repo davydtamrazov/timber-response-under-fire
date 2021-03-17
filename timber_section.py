@@ -74,7 +74,7 @@ class Section():
         '''
         self.texp = exposure_time
         
-    def apply_temperature(self, temp_pdepth=35, side=[1,1,1,1]):
+    def apply_temperature(self, T, temp_pdepth=35, side=[1,1,1,1]):
         '''
         Calculate temperature profile in discretised section.
         
@@ -88,13 +88,13 @@ class Section():
         
         # Find maximum of temperature profiles due to fire applied to each side
         self.temp_profile = np.dstack([
-            self._temp_bchar(self.z, self.Ti, self.Tp, 
+            self._temp_bchar(self.z, self.Ti, T, 
                              temp_pdepth, cdepth, side[0]),
-            self._temp_bchar(self.y, self.Ti, self.Tp, 
+            self._temp_bchar(self.y, self.Ti, T, 
                               temp_pdepth, cdepth, side[1]),
-            self._temp_bchar(self.w-self.z, self.Ti, self.Tp, 
+            self._temp_bchar(self.w-self.z, self.Ti, T, 
                               temp_pdepth, cdepth, side[2]),
-            self._temp_bchar(self.h-self.y, self.Ti, self.Tp, 
+            self._temp_bchar(self.h-self.y, self.Ti, T, 
                               temp_pdepth, cdepth, side[3])
             ]).max(axis=2)
         
@@ -102,7 +102,7 @@ class Section():
         self._split_fibers()
 
 
-    def plot(self, lw=1, factor=10, disp_fiber=True, levels=10):
+    def plot(self, lw=1, factor=10, disp_fiber=True, levels=10, save=0):
         '''
         Generate contour plot of the temperature profile across the section.
         
@@ -112,7 +112,7 @@ class Section():
             disp_fiber: A flag to display fibers on the plot (default=True)
             levels: An integer of contour plot levels (default=10)
         '''
-        fig, ax = plt.subplots(figsize=(self.w/factor, self.h/factor), dpi=200)
+        fig, ax = plt.subplots(figsize=(self.w/factor, self.h/factor), dpi=50)
         ax.set_axis_off()
         ax.set(xlim=[0, self.w], ylim=[0, self.h])
         
@@ -128,9 +128,15 @@ class Section():
         # Display charred area
         ax.add_patch(Rectangle((0,0), self.w, self.h, fill=True, 
                                 fc = 'black', alpha = 0.75, hatch='/')) 
+        fig.tight_layout()
+        
+        if save: 
+            fig.savefig(save, transparent=True, bbox_inches='tight', pad_inches = 0)
+        
+        plt.show()
         
     
-    def _temp_bchar(self, d, Ti, Tp, temp_pdepth, cdepth, exposed=True):
+    def _temp_bchar(self, d, Ti, T, temp_pdepth, cdepth, exposed=True):
         '''
         Calculate temperature at an effective depth below the char layer
         using Eurocode 5 temperature profile equation.
@@ -138,14 +144,14 @@ class Section():
         Args:
             d: A float depth from the section edge (mm)
             Ti: An integer ambient temperature (Celsius)
-            Tp: An integer surface temperature (Celsius)
+            T: An integer surface temperature (Celsius)
             temp_pdepth: A float temperature penetration depth (default=35mm)
             cdepth: Charred depth from section edge (mm)
         '''
         
         d_eff = (d - exposed*cdepth).clip(max=temp_pdepth)
         d_eff = np.where(d_eff < 0, np.nan, d_eff)
-        Tx = Ti + exposed * (Tp - Ti) * (1-d_eff/temp_pdepth)**2
+        Tx = Ti + exposed * (T - Ti) * (1-d_eff/temp_pdepth)**2
         return Tx
     
 
@@ -183,12 +189,3 @@ class Section():
                 c1, c2 = (y_min, z_min), (y_max, z_max)
                 nz, ny = self.z[s.slice].shape
                 self.patch_list.append([self.temp_dict[t], ny, nz, c1, c2])
-                
-                
-# t = Section(200,100)
-# t.discretize([25,10])
-# t.set_exposure_time(20)
-# t.apply_temperature(side=[1,0,0,1])
-# t.plot()
-
-# print(np.array(t.patch_list))

@@ -2,13 +2,14 @@
 # -*- coding: utf-8 -*-
 
 import openseespy.opensees as ops
+from openseespy import test
+import openseespy.postprocessing.ops_vis as opsv
+import openseespy.postprocessing.Get_Rendering as opsplt
+from openseespy.preprocessing import DiscretizeMember
 import matplotlib.pyplot as plt
 import numpy as np
 from timber_section import Section
-import openseespy.postprocessing.ops_vis as opsv
-
-# import OpenSeesPy plotting commands
-import openseespy.postprocessing.Get_Rendering as opsplt
+from scipy.interpolate import make_interp_spline
 
 
 class StructuralModel():
@@ -39,16 +40,21 @@ class StructuralModel():
       nodeDisp    = list of the horizontal middle node displacements at each 
                     load step
     '''
-    def __init__(self, texp, w, h, mesh_size, ndm=2, ndf=3):
+    def __init__(self, texp, w, h, T, mesh_size, nodes, elements, fixs, loads, ndm=2, ndf=3):
                            
         self.section = Section(width=w, height=h)
         self.material = Material()
+        self.nodes = nodes
+        self.elements = elements
+        self.fixs = fixs
+        self.loads = loads
+        
+        self.section.discretize(mesh_size)
+        self.section.set_exposure_time(texp)
+        self.section.apply_temperature(T=T)
         
         ops.wipe()
         ops.model('basic', '-ndm', ndm, '-ndf', ndf)
-        self.section.discretize(mesh_size)
-        self.section.set_exposure_time(texp)
-        self.section.apply_temperature()
         
     def define_material(self):
         '''
@@ -61,13 +67,7 @@ class StructuralModel():
             stress, strain = self.material.get_stress_strain(T)
             ops.uniaxialMaterial('ElasticMultiLinear', mattag, 0.0, '-strain', *strain, '-stress', *stress)
 
-        
-        # opsplt.plot_model()
-            # ops.uniaxialMaterial('MultiLinear', mattag, *[i for p in pairs for i in p])
-        # Define hysteretic material
-        # ops.uniaxialMaterial('Hysteretic',mattag,s1c,e1c,s2c,e2c,s3c,e3c,s1t,e1t,s2t,e2t,s3t,e3t,1,1,1,1)
-        
-    def define_section(self):
+    def define_fiber_section(self):
         '''
         Define fiber section.
         '''
@@ -76,24 +76,32 @@ class StructuralModel():
             mattag, ny, nz, coord1, coord2 = p
             ops.patch('rect', mattag, ny, nz, *coord1, *coord2)
         
-    def define_geometry(self, nodes, elements, fixities):
+    def define_geometry(self, num_integ=10):
         '''
         Define geometry of the structure.
         
         Args:
             nodes: A list of nodes in a form [node_tag, coord1, coord2]
-            elements: A list of elements in a form [elm_tag, node1, node2]
+            elements: A list of elements in a form [ele_tag, node1, node2, disc]
             fixities: A list of fixities in a form [node, x, y, z]
         '''
         
         ops.geomTransf('PDelta', 1)
-        ops.beamIntegration('Lobatto', 1, 1, 10)
+        ops.beamIntegration('Lobatto', 1, 1, num_integ)
         
-        for nd in nodes: ops.node(*nd)
-        for el in elements: ops.element('forceBeamColumn', *el, 1, 1)
-        for fx in fixities: ops.fix(*fx)
+        for nd in self.nodes: ops.node(*nd)
+            
+        for el in self.elements:
+            ele_tag, node1, node2, disc = el
+            DiscretizeMember.DiscretizeMember(node1, node2, disc, 
+                                              'forceBeamColumn', 1, 1,
+                                              nodeTag=len(ops.getNodeTags())+1,
+                                              eleTag=len(ops.getEleTags())+1)
         
-    def define_loads(self, loads):
+        for fx in self.fixs: ops.fix(*fx)
+
+        
+    def define_loads(self):
         '''
         Apply loads
         
@@ -104,7 +112,7 @@ class StructuralModel():
         ops.timeSeries('Linear', 1)
         ops.pattern('Plain', 1, 1)
         
-        for ld in loads: ops.load(*ld)
+        for ld in self.loads: ops.load(*ld)
         
         
     def define_recorders(self, node_recorders):
@@ -113,7 +121,7 @@ class StructuralModel():
             ops.recorder('Node','-file', name,'-closeOnWrite','-node', node, 
                          '-dof', dof, restype)
             
-    def analyse(self, num_incr):
+    def analyse(self, num_incr, return_node_disp=None):
         '''
         Analyse the system.
         '''
@@ -123,38 +131,67 @@ class StructuralModel():
         ops.constraints('Transformation')
         ops.numberer('RCM')
         ops.system('BandGeneral')
-        ops.test('NormUnbalance',1e-8, 10)
+        ops.test('NormUnbalance',2e-8, num_incr)
         ops.algorithm('Newton')
         ops.integrator('LoadControl', 1/num_incr)
-        ops.analysis('Static')
-        
         ops.record()
-        ok = ops.analyze(num_incr)
         
-        print(ops.nodeDisp(3,2))
+        ops.analysis('Static')
+        ok = ops.analyze(num_incr)
 
-        ## Report analysis status
+        # Report analysis status
         if ok == 0: print("Analysis done.")
         else:       print("Convergence issue.")
+        
+        # print(ops.nodeDisp(3))
+        if return_node_disp==None:
+            return ok
+        else:
+            return ok, ops.nodeDisp(return_node_disp)
                 
     def wipe_model(self):
         ops.wipe()
 
     def plot_structure(self):
-        fig, ax = plt.subplots(dpi=200)
+        fig, ax = plt.subplots(dpi=50)
         ax.set_axis_off()
-        opsplt.plot_model('nodes','elements')
+        opsv.plot_model('nodes','elements')
+        plt.show()
         
-    def plot_deformed_shape(self, scale=0):
-        if not scale: scale = opsv.plot_defo()
+    def plot_deformed_shape(self, xlim, ylim, scale=1, arrow_len=10, arrow_width=2, save=0):
         
-        fig, ax = plt.subplots(dpi=200)
+        fig, ax = plt.subplots(dpi=75)
         ax.set_axis_off()
-        opsv.plot_defo(scale, fmt_interp='b.-')
-        opsv.plot_defo(scale, nep=5, interpFlag=0, fmt_nodes='bo-')
+        ax.grid(True, which='both', alpha=0.5)
+        ax.axhline(y=0, color='k', lw=1)
         
-    
+        opsv.plot_defo(scale, fmt_undefo='k-', fmt_interp='k--')      
         
+        ax.axis('equal')
+        # ax.set_aspect('auto')
+        ax.set(xlim=xlim, ylim=ylim)
+
+        node_list = ops.getNodeTags()
+        node_disp = np.array([ops.nodeDisp(n) for n in node_list])
+        node_coord = np.array([ops.nodeCoord(n) for n in node_list])
+        new_coord = node_disp[:,:-1]*scale + node_coord
+        
+        for node, Px, Py, M in self.loads:
+            c = new_coord[node_list.index(node),:]
+            ax.annotate('', xytext = (c[0]+abs(Px)*arrow_len, 
+                                      c[1]+abs(Py)*arrow_len), 
+                        xy = (c[0], c[1]), 
+                        arrowprops = dict(arrowstyle=f'-|>, \
+                                          head_width={arrow_width/5},\
+                                          head_length={arrow_width/2}',
+                                          lw=arrow_width,
+                                          fc='orangered',
+                                          ec='orangered'))
+        
+        if save: 
+            fig.savefig(save, transparent=True)
+            
+        plt.show()
         
  
 class Material():
