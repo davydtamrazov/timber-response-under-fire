@@ -24,6 +24,6 @@ A general framework of the implementation of the fire loading analysis of a timb
 
 #### Section definition
 
-Timber section is defined in [timber_section.py](https://github.com/davydtamrazov/timber-response-under-fire/blob/main/src/timber_section.py) file. The process is illustrated on the digram below.
+Timber section is defined in [timber_section.py](https://github.com/davydtamrazov/timber-response-under-fire/blob/main/src/timber_section.py) file. The process is illustrated on the diagram below.
 
 ![](https://github.com/davydtamrazov/timber-response-under-fire/blob/main/aux/section_splitting_process.png)
