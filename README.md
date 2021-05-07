@@ -11,7 +11,7 @@ The topic of timber structures was explored as a part of the [final project](//g
 
 
 ## Methodology
-A general framework of the implementation of the fire loading analysis of a timber structure is as follows:
+A general framework of the fire loading analysis implementation is as follows:
 
 1. Define timber section dimensions.
 2. Define fire exposure time and surface temperature.
