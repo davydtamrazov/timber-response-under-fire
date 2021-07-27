@@ -1,4 +1,4 @@
-# Structural Response of Timber Structures under Fire
+# Structural Response of Timber under Fire
 
 ## Overview
 
